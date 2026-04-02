@@ -11,41 +11,40 @@
 
     <nav class="bg-[#161b22] border-b border-slate-700 p-4 sticky top-0 z-50 shadow-2xl">
         <div class="max-w-6xl mx-auto flex justify-between items-center">
-            <h1 class="text-2xl font-black tracking-tighter flex items-center gap-2 text-white italic cursor-pointer" onclick="window.location.href=window.location.pathname">
+            <h1 class="text-2xl font-black tracking-tighter flex items-center gap-2 text-white italic cursor-pointer" onclick="location.reload()">
                 <i class="fas fa-search-shield text-blue-500"></i> SOFTWARE<span class="text-blue-500">VULN</span>LOOKUP
             </h1>
             <div class="text-[10px] uppercase tracking-widest text-blue-400 font-bold border border-blue-900/50 px-3 py-1 rounded-full">
-                <i class="fas fa-check-circle mr-1"></i> NIST API LIVE
+                <i class="fas fa-satellite-dish mr-1"></i> Proxy Mode Active
             </div>
         </div>
     </nav>
 
     <main class="max-w-6xl mx-auto p-6">
         <div class="bg-[#161b22] rounded-2xl p-8 border border-slate-800 shadow-2xl mb-10 transition-all hover:border-slate-700">
-            <h2 class="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4 text-center md:text-left">Identify Asset Vulnerabilities</h2>
             <div class="flex flex-col md:flex-row gap-4">
                 <input type="text" id="searchInput" autofocus
-                    placeholder="Paste RMM line (e.g. Google Chrome 146.0.7680.165)" 
+                    placeholder="Search software (e.g. Chrome)" 
                     class="flex-1 bg-[#0b0e14] border border-slate-700 rounded-xl px-6 py-4 text-lg focus:ring-2 focus:ring-blue-600 focus:outline-none transition-all text-white">
                 <button onclick="performLookup()" class="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all shadow-lg active:scale-95">
-                    Run Audit
+                    Search
                 </button>
             </div>
-            <div id="statusInfo" class="mt-4 text-[11px] font-mono text-slate-500 hidden text-center md:text-left">
-                Refined Search: <span id="cleanedTerm" class="text-blue-400 font-bold"></span>
-            </div>
+            <p id="statusMsg" class="mt-4 text-[11px] font-mono text-slate-500 hidden italic">
+                Requesting data via AllOrigins Proxy...
+            </p>
         </div>
 
         <div id="loader" class="hidden py-20 text-center">
             <div class="inline-block animate-spin rounded-full h-10 w-10 border-4 border-slate-800 border-t-blue-500 mb-4"></div>
-            <p class="text-slate-500 text-xs font-bold tracking-widest uppercase">Consulting Global Database...</p>
+            <p class="text-slate-500 text-xs font-bold uppercase tracking-widest">Consulting NIST Database...</p>
         </div>
 
-        <div id="resultsArea" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20"></div>
+        <div id="resultsArea" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
 
         <div id="errorBox" class="mt-10 p-6 bg-red-950/20 border border-red-900/30 rounded-xl hidden">
-            <h3 class="text-red-500 font-bold uppercase text-xs mb-2 italic">Error Occurred</h3>
-            <p class="text-xs text-red-400/80 leading-relaxed" id="errorText"></p>
+            <h3 class="text-red-500 font-bold uppercase text-xs mb-2">Error Detailed</h3>
+            <p class="text-[11px] text-red-400/80 font-mono" id="errorText"></p>
         </div>
     </main>
 
@@ -53,47 +52,44 @@
         const API_KEY = "a47d639f-3dd0-4ebc-b19e-b9f4d768abf3";
 
         function cleanName(str) {
-            if(!str) return "";
-            // Grabs first line, removes versions, architectures, and common vendor names
-            return str.split('\n')[0]
-                .replace(/(\d+\.)+\d+/g, '') 
-                .replace(/\(x64\)|\(32-bit\)|(64 bits)|x64|x86/gi, '')
-                .replace(/Microsoft Corporation|Google LLC|Intel Corporation|Dell Inc\.|Apple Inc\.|Thales DIS|LogMeIn, Inc\.|Dropbox, Inc\.|Thesaurus Software Ltd/gi, '')
-                .replace(/-|–/g, ' ')
-                .trim();
+            return str.split('\n')[0].replace(/(\d+\.)+\d+/g, '').replace(/\(x64\)|\(32-bit\)|(64 bits)|x64|x86/gi, '').trim();
         }
 
         async function performLookup() {
-            const inputField = document.getElementById('searchInput');
-            const term = cleanName(inputField.value);
+            const input = document.getElementById('searchInput').value;
+            const term = cleanName(input);
             const results = document.getElementById('resultsArea');
             const loader = document.getElementById('loader');
-            const status = document.getElementById('statusInfo');
             const errorBox = document.getElementById('errorBox');
-            
+            const statusMsg = document.getElementById('statusMsg');
+
             if (!term) return;
 
             results.innerHTML = '';
             errorBox.classList.add('hidden');
             loader.classList.remove('hidden');
-            status.classList.remove('hidden');
-            document.getElementById('cleanedTerm').innerText = term;
+            statusMsg.classList.remove('hidden');
 
             try {
-                const url = `https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch=${encodeURIComponent(term)}&resultsPerPage=15`;
+                // We wrap the NIST URL inside the AllOrigins proxy URL
+                // This bypasses the browser's CORS security block
+                const nistUrl = `https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch=${encodeURIComponent(term)}&resultsPerPage=15&apiKey=${API_KEY}`;
+                const finalUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(nistUrl)}`;
+
+                const response = await fetch(finalUrl);
+                if (!response.ok) throw new Error("Proxy connection failed.");
                 
-                const response = await fetch(url, {
-                    method: 'GET',
-                    headers: { 'apiKey': API_KEY }
-                });
+                const wrapper = await response.json();
+                
+                // AllOrigins returns the string in 'contents'. We must parse it.
+                if (!wrapper.contents) throw new Error("No data returned from NIST.");
+                const data = JSON.parse(wrapper.contents);
 
-                if (!response.ok) throw new Error(`NIST API returned ${response.status}. Key may be throttled.`);
-
-                const data = await response.json();
                 loader.classList.add('hidden');
+                statusMsg.classList.add('hidden');
 
                 if (!data.vulnerabilities || data.vulnerabilities.length === 0) {
-                    results.innerHTML = `<div class="col-span-full p-12 border border-dashed border-slate-800 rounded-2xl text-center text-slate-500 italic uppercase text-sm tracking-widest bg-[#161b22]/30">No CVEs recorded for "${term}"</div>`;
+                    results.innerHTML = `<div class="col-span-full p-12 border border-dashed border-slate-800 rounded-2xl text-center text-slate-500 uppercase text-xs tracking-[0.3em]">No vulnerabilities found for "${term}"</div>`;
                     return;
                 }
 
@@ -104,48 +100,34 @@
                     const severity = m?.baseSeverity || 'UNKNOWN';
 
                     let color = 'bg-slate-800';
-                    if (score >= 9) color = 'bg-red-600 shadow-[0_0_15px_rgba(220,38,38,0.4)]';
+                    if (score >= 9) color = 'bg-red-600';
                     else if (score >= 7) color = 'bg-orange-600';
 
-                    const desc = cve.descriptions.find(d => d.lang === 'en')?.value || "No description available.";
-                    const link = cve.references.find(r => r.tags?.includes('Vendor Advisory'))?.url || cve.references[0]?.url || "#";
+                    const desc = cve.descriptions.find(d => d.lang === 'en')?.value || "No info.";
+                    const link = cve.references[0]?.url || "#";
 
                     results.innerHTML += `
-                        <div class="bg-[#161b22] border border-slate-800 rounded-xl flex flex-col hover:border-blue-500/40 transition-all duration-300 shadow-xl overflow-hidden group">
-                            <div class="p-5 flex-1">
-                                <div class="flex justify-between items-center mb-4">
-                                    <span class="text-blue-500 font-mono text-[10px] font-bold tracking-tighter">${cve.id}</span>
-                                    <span class="${color} text-[9px] font-black px-2 py-0.5 rounded text-white tracking-tighter">${severity} ${score}</span>
-                                </div>
-                                <p class="text-[11px] text-slate-400 leading-relaxed line-clamp-6 group-hover:text-slate-200 transition-colors italic">"${desc}"</p>
+                        <div class="bg-[#161b22] border border-slate-800 rounded-xl p-5 hover:border-blue-500/50 transition-all flex flex-col shadow-xl">
+                            <div class="flex justify-between items-center mb-4">
+                                <span class="text-blue-500 font-mono text-[10px] font-bold">${cve.id}</span>
+                                <span class="${color} text-[9px] font-black px-2 py-0.5 rounded text-white">${severity} ${score}</span>
                             </div>
-                            <div class="p-4 bg-black/20 border-t border-slate-800/50">
-                                <a href="${link}" target="_blank" class="block w-full text-center py-2 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white rounded text-[10px] font-black uppercase tracking-[0.2em] transition-all">
-                                    View Remediation
-                                </a>
-                            </div>
+                            <p class="text-[11px] text-slate-400 leading-relaxed mb-6 line-clamp-5">"${desc}"</p>
+                            <a href="${link}" target="_blank" class="mt-auto block w-full text-center py-2 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white rounded text-[10px] font-black uppercase tracking-widest transition-all">
+                                Documentation
+                            </a>
                         </div>`;
                 });
 
             } catch (err) {
                 loader.classList.add('hidden');
+                statusMsg.classList.add('hidden');
                 errorBox.classList.remove('hidden');
-                document.getElementById('errorText').innerText = err.message;
+                document.getElementById('errorText').innerText = err.message + " - The NIST API may be down or the proxy is being rate-limited.";
             }
         }
 
-        // Listen for ENTER key
         document.getElementById("searchInput").addEventListener("keyup", e => { if (e.key === "Enter") performLookup(); });
-
-        // Handle URL Parameters for Deep Linking (?q=SoftwareName)
-        window.onload = () => {
-            const urlParams = new URLSearchParams(window.location.search);
-            const query = urlParams.get('q') || urlParams.get('search');
-            if (query) {
-                document.getElementById('searchInput').value = query;
-                performLookup();
-            }
-        };
     </script>
 </body>
 </html>
