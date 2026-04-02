@@ -101,7 +101,6 @@
             const sortBy = document.getElementById('sortOrder').value;
             container.innerHTML = '';
 
-            // 1. SORTING LOGIC
             let sorted = [...currentData].sort((a, b) => {
                 if (sortBy === 'newest') return new Date(b.cve.published) - new Date(a.cve.published);
                 return getScore(b) - getScore(a);
@@ -119,7 +118,6 @@
                 const severity = (metrics?.baseSeverity || 'UNKNOWN').toUpperCase();
                 const date = new Date(cve.published).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
 
-                // 2. PATCH DETECTION
                 const isPatch = cve.references.some(r => (r.tags || []).includes('Patch') || (r.tags || []).includes('Vendor Advisory'));
                 const link = cve.references.find(r => (r.tags || []).includes('Vendor Advisory'))?.url || cve.references[0]?.url || "#";
 
