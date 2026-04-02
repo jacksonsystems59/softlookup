@@ -14,45 +14,48 @@
             <h1 class="text-2xl font-black tracking-tighter flex items-center gap-2 text-white italic cursor-pointer" onclick="location.reload()">
                 <i class="fas fa-search-shield text-blue-500"></i> SOFTWARE<span class="text-blue-500">VULN</span>LOOKUP
             </h1>
-            <div class="text-[10px] uppercase tracking-widest text-blue-400 font-bold border border-blue-900/50 px-3 py-1 rounded-full">
-                <i class="fas fa-satellite-dish mr-1"></i> Proxy Mode Active
+            <div class="text-[10px] uppercase tracking-widest text-green-400 font-bold border border-green-900/30 px-3 py-1 rounded-full bg-green-900/10">
+                <i class="fas fa-check-circle mr-1"></i> System Online
             </div>
         </div>
     </nav>
 
     <main class="max-w-6xl mx-auto p-6">
         <div class="bg-[#161b22] rounded-2xl p-8 border border-slate-800 shadow-2xl mb-10 transition-all hover:border-slate-700">
+            <h2 class="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Enterprise Vulnerability Search</h2>
             <div class="flex flex-col md:flex-row gap-4">
                 <input type="text" id="searchInput" autofocus
-                    placeholder="Search software (e.g. Chrome)" 
+                    placeholder="Search software (e.g. Chrome, WireGuard, Dropbox)" 
                     class="flex-1 bg-[#0b0e14] border border-slate-700 rounded-xl px-6 py-4 text-lg focus:ring-2 focus:ring-blue-600 focus:outline-none transition-all text-white">
                 <button onclick="performLookup()" class="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all shadow-lg active:scale-95">
-                    Search
+                    Search CVEs
                 </button>
             </div>
-            <p id="statusMsg" class="mt-4 text-[11px] font-mono text-slate-500 hidden italic">
-                Requesting data via AllOrigins Proxy...
-            </p>
         </div>
 
         <div id="loader" class="hidden py-20 text-center">
             <div class="inline-block animate-spin rounded-full h-10 w-10 border-4 border-slate-800 border-t-blue-500 mb-4"></div>
-            <p class="text-slate-500 text-xs font-bold uppercase tracking-widest">Consulting NIST Database...</p>
+            <p class="text-slate-500 text-xs font-bold uppercase tracking-widest">Querying NIST Database via Bridge...</p>
         </div>
 
-        <div id="resultsArea" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+        <div id="resultsArea" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20"></div>
 
-        <div id="errorBox" class="mt-10 p-6 bg-red-950/20 border border-red-900/30 rounded-xl hidden">
-            <h3 class="text-red-500 font-bold uppercase text-xs mb-2">Error Detailed</h3>
+        <div id="errorBox" class="mt-10 p-6 bg-red-950/20 border border-red-900/30 rounded-xl hidden text-center">
+            <i class="fas fa-exclamation-triangle text-red-500 mb-2 text-xl"></i>
+            <h3 class="text-red-500 font-bold uppercase text-xs mb-2">Lookup Failed</h3>
             <p class="text-[11px] text-red-400/80 font-mono" id="errorText"></p>
         </div>
     </main>
 
     <script>
-        const API_KEY = "a47d639f-3dd0-4ebc-b19e-b9f4d768abf3";
+        const GOOGLE_BRIDGE_URL = "https://script.google.com/macros/s/AKfycbxyn55A5zJriE3KMOM_VC_1KhhCY2jernm7t76UqaShZhgyexzvkYNdlT3f3Uk1mHF0/exec";
 
         function cleanName(str) {
-            return str.split('\n')[0].replace(/(\d+\.)+\d+/g, '').replace(/\(x64\)|\(32-bit\)|(64 bits)|x64|x86/gi, '').trim();
+            return str.split('\n')[0]
+                .replace(/(\d+\.)+\d+/g, '') 
+                .replace(/\(x64\)|\(32-bit\)|(64 bits)|x64|x86/gi, '')
+                .replace(/Microsoft Corporation|Google LLC|Intel Corporation|Dell Inc\.|Apple Inc\.|Thales DIS|LogMeIn, Inc\.|Dropbox, Inc\./gi, '')
+                .trim();
         }
 
         async function performLookup() {
@@ -61,35 +64,24 @@
             const results = document.getElementById('resultsArea');
             const loader = document.getElementById('loader');
             const errorBox = document.getElementById('errorBox');
-            const statusMsg = document.getElementById('statusMsg');
 
             if (!term) return;
 
             results.innerHTML = '';
             errorBox.classList.add('hidden');
             loader.classList.remove('hidden');
-            statusMsg.classList.remove('hidden');
 
             try {
-                // We wrap the NIST URL inside the AllOrigins proxy URL
-                // This bypasses the browser's CORS security block
-                const nistUrl = `https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch=${encodeURIComponent(term)}&resultsPerPage=15&apiKey=${API_KEY}`;
-                const finalUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(nistUrl)}`;
-
-                const response = await fetch(finalUrl);
-                if (!response.ok) throw new Error("Proxy connection failed.");
+                // Fetch through the Google Apps Script Bridge
+                const response = await fetch(`${GOOGLE_BRIDGE_URL}?q=${encodeURIComponent(term)}`);
                 
-                const wrapper = await response.json();
+                if (!response.ok) throw new Error("Bridge connection error.");
                 
-                // AllOrigins returns the string in 'contents'. We must parse it.
-                if (!wrapper.contents) throw new Error("No data returned from NIST.");
-                const data = JSON.parse(wrapper.contents);
-
+                const data = await response.json();
                 loader.classList.add('hidden');
-                statusMsg.classList.add('hidden');
 
                 if (!data.vulnerabilities || data.vulnerabilities.length === 0) {
-                    results.innerHTML = `<div class="col-span-full p-12 border border-dashed border-slate-800 rounded-2xl text-center text-slate-500 uppercase text-xs tracking-[0.3em]">No vulnerabilities found for "${term}"</div>`;
+                    results.innerHTML = `<div class="col-span-full p-20 border border-dashed border-slate-800 rounded-2xl text-center text-slate-500 uppercase text-xs tracking-[0.3em] bg-[#161b22]/20 font-bold">Safe: No CVEs found for "${term}"</div>`;
                     return;
                 }
 
@@ -99,31 +91,30 @@
                     const score = m?.baseScore || 'N/A';
                     const severity = m?.baseSeverity || 'UNKNOWN';
 
-                    let color = 'bg-slate-800';
-                    if (score >= 9) color = 'bg-red-600';
-                    else if (score >= 7) color = 'bg-orange-600';
+                    let color = 'bg-slate-800 border-slate-700';
+                    if (score >= 9) color = 'bg-red-900/20 border-red-900/50 text-red-400';
+                    else if (score >= 7) color = 'bg-orange-900/20 border-orange-900/50 text-orange-400';
 
                     const desc = cve.descriptions.find(d => d.lang === 'en')?.value || "No info.";
                     const link = cve.references[0]?.url || "#";
 
                     results.innerHTML += `
-                        <div class="bg-[#161b22] border border-slate-800 rounded-xl p-5 hover:border-blue-500/50 transition-all flex flex-col shadow-xl">
+                        <div class="bg-[#161b22] border border-slate-800 rounded-xl flex flex-col p-6 hover:border-blue-500/50 transition-all shadow-xl group">
                             <div class="flex justify-between items-center mb-4">
                                 <span class="text-blue-500 font-mono text-[10px] font-bold">${cve.id}</span>
-                                <span class="${color} text-[9px] font-black px-2 py-0.5 rounded text-white">${severity} ${score}</span>
+                                <span class="${color} text-[9px] font-black px-2 py-0.5 rounded border uppercase tracking-tighter shadow-sm">${severity} ${score}</span>
                             </div>
-                            <p class="text-[11px] text-slate-400 leading-relaxed mb-6 line-clamp-5">"${desc}"</p>
-                            <a href="${link}" target="_blank" class="mt-auto block w-full text-center py-2 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white rounded text-[10px] font-black uppercase tracking-widest transition-all">
-                                Documentation
+                            <p class="text-[11px] text-slate-400 leading-relaxed mb-6 line-clamp-6 italic group-hover:text-slate-300 transition-colors">"${desc}"</p>
+                            <a href="${link}" target="_blank" class="mt-auto block w-full text-center py-2.5 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white rounded text-[10px] font-black uppercase tracking-[0.2em] transition-all border border-blue-900/20">
+                                <i class="fas fa-external-link-alt mr-2 text-[8px]"></i> Technical Details
                             </a>
                         </div>`;
                 });
 
             } catch (err) {
                 loader.classList.add('hidden');
-                statusMsg.classList.add('hidden');
                 errorBox.classList.remove('hidden');
-                document.getElementById('errorText').innerText = err.message + " - The NIST API may be down or the proxy is being rate-limited.";
+                document.getElementById('errorText').innerText = "The bridge is currently unavailable. Please verify the Google Macro is deployed as 'Anyone'.";
             }
         }
 
