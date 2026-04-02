@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Security Patch Portal</title>
+    <title>Security Vuln & Patch Portal</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        .crit-glow { box-shadow: 0 0 25px rgba(220, 38, 38, 0.3); }
+        .crit-glow { box-shadow: 0 0 25px rgba(220, 38, 38, 0.4); }
         .hide-low [data-severity="LOW"], .hide-low [data-severity="MEDIUM"] { display: none; }
     </style>
 </head>
@@ -32,7 +32,8 @@
     </nav>
 
     <main class="max-w-7xl mx-auto p-6">
-        <div class="bg-[#161b22] rounded-2xl p-8 border border-slate-800 shadow-2xl mb-8">
+        <div class="bg-[#161b22] rounded-2xl p-8 border border-slate-800 shadow-2xl mb-8 text-center">
+            <h2 class="text-slate-500 uppercase text-[10px] font-bold tracking-[0.3em] mb-4">Enterprise Vulnerability Audit</h2>
             <div class="flex flex-col md:flex-row gap-4">
                 <div class="relative flex-1">
                     <i class="fas fa-search absolute left-5 top-5 text-slate-600"></i>
@@ -61,16 +62,13 @@
     </main>
 
     <script>
-        // THIS LINK BYPASSES THE BROWSER BLOCKS SHOWN IN YOUR SCREENSHOTS
+        // THIS IS THE BRIDGE THAT BYPASSES THE BLOCKS IN YOUR SCREENSHOTS
         const BRIDGE_URL = "https://script.google.com/macros/s/AKfycbxyn55A5zJriE3KMOM_VC_1KhhCY2jernm7t76UqaShZhgyexzvkYNdlT3f3Uk1mHF0/exec";
         let currentData = [];
 
         function cleanName(str) {
             if(!str) return "";
-            return str.split('\n')[0]
-                .replace(/(\d+\.)+\d+/g, '') 
-                .replace(/\(x64\)|\(32-bit\)|x64|x86/gi, '')
-                .trim();
+            return str.split('\n')[0].replace(/(\d+\.)+\d+/g, '').replace(/\(x64\)|\(32-bit\)|x64|x86/gi, '').trim();
         }
 
         async function performLookup() {
@@ -83,13 +81,13 @@
             document.getElementById('loader').classList.remove('hidden');
 
             try {
-                // We talk to Google, which is allowed by your browser
+                // TALKING TO GOOGLE INSTEAD OF NIST DIRECTLY TO AVOID CORS ERRORS
                 const response = await fetch(`${BRIDGE_URL}?q=${encodeURIComponent(term)}`);
                 const data = await response.json();
                 currentData = data.vulnerabilities || [];
                 renderCards();
             } catch (err) {
-                document.getElementById('errorText').innerText = "The browser blocked the bridge or the Google Script is offline.";
+                document.getElementById('errorText').innerText = "The connection was refused. Ensure your Google Script is deployed as 'Web App' and set to 'Anyone'.";
                 document.getElementById('errorBox').classList.remove('hidden');
             } finally {
                 document.getElementById('loader').classList.add('hidden');
