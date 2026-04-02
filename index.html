@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Security Vuln & Patch Tracker</title>
+    <title>Security Vuln & Patch Portal</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        .crit-glow { box-shadow: 0 0 20px rgba(220, 38, 38, 0.3); }
+        .crit-glow { box-shadow: 0 0 25px rgba(220, 38, 38, 0.3); }
         .hide-low [data-severity="LOW"], .hide-low [data-severity="MEDIUM"] { display: none; }
     </style>
 </head>
@@ -20,9 +20,9 @@
             </h1>
             
             <div class="flex items-center gap-3">
-                <select id="sortOrder" onchange="renderCards()" class="bg-[#0b0e14] border border-slate-700 text-[10px] uppercase font-bold px-3 py-1.5 rounded-lg outline-none">
-                    <option value="newest">Sort: Newest First</option>
-                    <option value="highest">Sort: Highest Risk</option>
+                <select id="sortOrder" onchange="renderCards()" class="bg-[#0b0e14] border border-slate-700 text-[10px] uppercase font-bold px-3 py-1.5 rounded-lg outline-none cursor-pointer">
+                    <option value="newest">Latest Threats</option>
+                    <option value="highest">Highest Risk</option>
                 </select>
                 <button id="toggleCritical" onclick="toggleUrgentOnly()" class="bg-slate-800 border border-slate-700 text-[10px] uppercase font-bold px-4 py-1.5 rounded-lg hover:bg-red-900/20 transition-all">
                     <i class="fas fa-exclamation-triangle mr-1 text-red-500"></i> Urgent Only
@@ -40,7 +40,7 @@
                         placeholder="Search software (e.g. Chrome, Dropbox, Outlook)" 
                         class="w-full bg-[#0b0e14] border border-slate-700 rounded-xl pl-12 pr-6 py-4 text-lg focus:ring-2 focus:ring-blue-600 outline-none text-white transition-all">
                 </div>
-                <button onclick="performLookup()" class="bg-blue-600 hover:bg-blue-500 text-white px-12 py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-95">
+                <button onclick="performLookup()" class="bg-blue-600 hover:bg-blue-500 text-white px-12 py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-95 shadow-lg">
                     Analyze Risks
                 </button>
             </div>
@@ -48,23 +48,30 @@
 
         <div id="loader" class="hidden py-20 text-center">
             <div class="inline-block animate-spin rounded-full h-10 w-10 border-4 border-slate-800 border-t-blue-500 mb-4"></div>
-            <p class="text-slate-500 text-xs font-bold uppercase tracking-widest">Consulting Global Threat Database...</p>
+            <p class="text-slate-500 text-xs font-bold uppercase tracking-widest">Querying Global Threat Intelligence...</p>
         </div>
 
         <div id="resultsArea" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20"></div>
 
         <div id="errorBox" class="mt-10 p-6 bg-red-950/20 border border-red-900/30 rounded-xl hidden text-center">
+            <i class="fas fa-plug-circle-xmark text-red-500 mb-2 text-2xl"></i>
+            <h3 class="text-red-500 font-bold uppercase text-xs mb-1 tracking-widest">Connection Bridge Failed</h3>
             <p class="text-[11px] text-red-400/80 font-mono" id="errorText"></p>
         </div>
     </main>
 
     <script>
-        // USING YOUR VERIFIED BRIDGE URL TO PREVENT NETWORK ERRORS
+        // INTEGRATING YOUR SPECIFIC GOOGLE MACRO
         const BRIDGE_URL = "https://script.google.com/macros/s/AKfycbxyn55A5zJriE3KMOM_VC_1KhhCY2jernm7t76UqaShZhgyexzvkYNdlT3f3Uk1mHF0/exec";
         let currentData = [];
 
         function cleanName(str) {
-            return str.split('\n')[0].replace(/(\d+\.)+\d+/g, '').replace(/\(x64\)|\(32-bit\)|x64|x86/gi, '').trim();
+            if(!str) return "";
+            return str.split('\n')[0]
+                .replace(/(\d+\.)+\d+/g, '') 
+                .replace(/\(x64\)|\(32-bit\)|x64|x86/gi, '')
+                .replace(/Microsoft Corporation|Google LLC|Intel Corporation|Dell Inc\.|Apple Inc\./gi, '')
+                .trim();
         }
 
         async function performLookup() {
@@ -82,7 +89,7 @@
                 currentData = data.vulnerabilities || [];
                 renderCards();
             } catch (err) {
-                document.getElementById('errorText').innerText = "Security Handshake Failed. Verify Bridge deployment.";
+                document.getElementById('errorText').innerText = "The browser blocked the bridge or the Google Script is offline.";
                 document.getElementById('errorBox').classList.remove('hidden');
             } finally {
                 document.getElementById('loader').classList.add('hidden');
@@ -94,15 +101,14 @@
             const sortBy = document.getElementById('sortOrder').value;
             container.innerHTML = '';
 
+            // 1. SORTING LOGIC
             let sorted = [...currentData].sort((a, b) => {
                 if (sortBy === 'newest') return new Date(b.cve.published) - new Date(a.cve.published);
-                const scoreA = getScore(a);
-                const scoreB = getScore(b);
-                return scoreB - scoreA;
+                return getScore(b) - getScore(a);
             });
 
             if (sorted.length === 0) {
-                container.innerHTML = `<div class="col-span-full p-20 border border-dashed border-slate-800 rounded-2xl text-center text-slate-500 uppercase text-xs font-bold">No active vulnerabilities found.</div>`;
+                container.innerHTML = `<div class="col-span-full p-20 border border-dashed border-slate-800 rounded-2xl text-center text-slate-500 uppercase text-xs font-bold tracking-widest bg-[#161b22]/20">Safe: No Threats Detected.</div>`;
                 return;
             }
 
@@ -111,8 +117,9 @@
                 const metrics = cve.metrics?.cvssMetricV31?.[0]?.cvssData || cve.metrics?.cvssMetricV30?.[0]?.cvssData;
                 const score = metrics?.baseScore || '0';
                 const severity = (metrics?.baseSeverity || 'UNKNOWN').toUpperCase();
-                const date = new Date(cve.published).toLocaleDateString('en-GB');
+                const date = new Date(cve.published).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
 
+                // 2. PATCH DETECTION
                 const isPatch = cve.references.some(r => (r.tags || []).includes('Patch') || (r.tags || []).includes('Vendor Advisory'));
                 const link = cve.references.find(r => (r.tags || []).includes('Vendor Advisory'))?.url || cve.references[0]?.url || "#";
 
@@ -126,19 +133,19 @@
                             <span class="text-blue-500 font-mono text-[10px] font-bold block">${cve.id}</span>
                             <span class="text-[9px] text-slate-600 font-bold uppercase tracking-widest">${date}</span>
                         </div>
-                        <span class="px-2 py-1 rounded text-[10px] font-black uppercase ${getSeverityClass(score)}">${severity} ${score}</span>
+                        <span class="px-2 py-1 rounded text-[10px] font-black uppercase ${getSeverityClass(score)} border shadow-sm">${severity} ${score}</span>
                     </div>
                     
-                    <p class="text-[11px] text-slate-400 leading-relaxed mb-6 line-clamp-4 italic group-hover:text-slate-200 transition-colors">
-                        "${cve.descriptions.find(d => d.lang === 'en')?.value || 'No description available.'}"
+                    <p class="text-[11px] text-slate-400 leading-relaxed mb-6 line-clamp-5 italic group-hover:text-slate-200 transition-colors">
+                        "${cve.descriptions.find(d => d.lang === 'en')?.value || 'No technical details provided.'}"
                     </p>
 
                     <div class="mt-auto space-y-3">
                         <div class="p-3 bg-black/40 rounded-lg border border-slate-800 text-[9px] flex items-center gap-2 ${isPatch ? 'text-green-400' : 'text-orange-400'}">
                             <i class="fas ${isPatch ? 'fa-check-circle' : 'fa-info-circle'}"></i>
-                            <span class="font-bold">${isPatch ? 'OFFICIAL PATCH REPORTED' : 'ADVISORY ONLY - CHECK VENDOR'}</span>
+                            <span class="font-bold tracking-tight">${isPatch ? 'VENDOR PATCH IDENTIFIED' : 'GENERAL ADVISORY - MONITOR VENDOR'}</span>
                         </div>
-                        <a href="${link}" target="_blank" class="block w-full text-center py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[10px] font-black uppercase tracking-[0.2em] transition-all border border-blue-400/20">
+                        <a href="${link}" target="_blank" class="block w-full text-center py-3 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg text-[10px] font-black uppercase tracking-[0.2em] transition-all border border-blue-900/30">
                             Remediation Details
                         </a>
                     </div>
@@ -153,10 +160,10 @@
         }
 
         function getSeverityClass(score) {
-            if (score >= 9) return 'bg-red-600 text-white';
-            if (score >= 7) return 'bg-orange-600 text-white';
-            if (score >= 4) return 'bg-yellow-600 text-black';
-            return 'bg-slate-700 text-slate-300';
+            if (score >= 9) return 'bg-red-900/20 border-red-900 text-red-500';
+            if (score >= 7) return 'bg-orange-900/20 border-orange-900 text-orange-500';
+            if (score >= 4) return 'bg-yellow-900/20 border-yellow-700 text-yellow-500';
+            return 'bg-slate-700 text-slate-400 border-slate-600';
         }
 
         function toggleUrgentOnly() {
