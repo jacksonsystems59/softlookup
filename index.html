@@ -3,119 +3,169 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Software Vuln Lookup</title>
+    <title>Security Vuln & Patch Tracker</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .crit-glow { box-shadow: 0 0 20px rgba(220, 38, 38, 0.2); }
+        .hide-low [data-severity="LOW"], .hide-low [data-severity="MEDIUM"] { display: none; }
+    </style>
 </head>
 <body class="bg-[#0b0e14] text-slate-200 min-h-screen font-sans">
 
     <nav class="bg-[#161b22] border-b border-slate-700 p-4 sticky top-0 z-50 shadow-2xl">
-        <div class="max-w-6xl mx-auto flex justify-between items-center">
-            <h1 class="text-2xl font-black tracking-tighter flex items-center gap-2 text-white italic cursor-pointer" onclick="location.reload()">
-                <i class="fas fa-search-shield text-blue-500"></i> SOFTWARE<span class="text-blue-500">VULN</span>LOOKUP
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <h1 class="text-xl font-black tracking-tighter flex items-center gap-2 text-white italic cursor-pointer" onclick="location.reload()">
+                <i class="fas fa-shield-virus text-blue-500"></i> SECURITY<span class="text-blue-500">PATCH</span>PORTAL
             </h1>
-            <div class="text-[10px] uppercase tracking-widest text-green-400 font-bold border border-green-900/30 px-3 py-1 rounded-full bg-green-900/10">
-                <i class="fas fa-check-circle mr-1"></i> System Online
+            
+            <div class="flex items-center gap-3">
+                <select id="sortOrder" onchange="renderCards()" class="bg-[#0b0e14] border border-slate-700 text-[10px] uppercase font-bold px-3 py-1.5 rounded-lg focus:ring-2 focus:ring-blue-600 outline-none">
+                    <option value="newest">Sort: Newest First</option>
+                    <option value="highest">Sort: Highest Risk</option>
+                </select>
+                <button id="toggleCritical" onclick="toggleUrgentOnly()" class="bg-slate-800 border border-slate-700 text-[10px] uppercase font-bold px-4 py-1.5 rounded-lg hover:bg-red-900/20 transition-all">
+                    <i class="fas fa-exclamation-triangle mr-1 text-red-500"></i> Urgent Only
+                </button>
             </div>
         </div>
     </nav>
 
-    <main class="max-w-6xl mx-auto p-6">
-        <div class="bg-[#161b22] rounded-2xl p-8 border border-slate-800 shadow-2xl mb-10 transition-all hover:border-slate-700">
-            <h2 class="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Enterprise Vulnerability Search</h2>
+    <main class="max-w-7xl mx-auto p-6">
+        <div class="bg-[#161b22] rounded-2xl p-8 border border-slate-800 shadow-2xl mb-8">
             <div class="flex flex-col md:flex-row gap-4">
-                <input type="text" id="searchInput" autofocus
-                    placeholder="Search software (e.g. Chrome, WireGuard, Dropbox)" 
-                    class="flex-1 bg-[#0b0e14] border border-slate-700 rounded-xl px-6 py-4 text-lg focus:ring-2 focus:ring-blue-600 focus:outline-none transition-all text-white">
-                <button onclick="performLookup()" class="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all shadow-lg active:scale-95">
-                    Search CVEs
+                <div class="relative flex-1">
+                    <i class="fas fa-search absolute left-5 top-5 text-slate-600"></i>
+                    <input type="text" id="searchInput" autofocus
+                        placeholder="Enter Asset Name (e.g. Chrome, Outlook, SQL Server)" 
+                        class="w-full bg-[#0b0e14] border border-slate-700 rounded-xl pl-12 pr-6 py-4 text-lg focus:ring-2 focus:ring-blue-600 focus:outline-none transition-all text-white">
+                </div>
+                <button onclick="performLookup()" class="bg-blue-600 hover:bg-blue-500 text-white px-12 py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all shadow-lg active:scale-95">
+                    Analyze Risks
                 </button>
             </div>
         </div>
 
         <div id="loader" class="hidden py-20 text-center">
             <div class="inline-block animate-spin rounded-full h-10 w-10 border-4 border-slate-800 border-t-blue-500 mb-4"></div>
-            <p class="text-slate-500 text-xs font-bold uppercase tracking-widest">Querying NIST Database via Bridge...</p>
+            <p class="text-slate-500 text-xs font-bold uppercase tracking-widest">Cross-referencing Global Advisories...</p>
         </div>
 
         <div id="resultsArea" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20"></div>
 
         <div id="errorBox" class="mt-10 p-6 bg-red-950/20 border border-red-900/30 rounded-xl hidden text-center">
-            <i class="fas fa-exclamation-triangle text-red-500 mb-2 text-xl"></i>
-            <h3 class="text-red-500 font-bold uppercase text-xs mb-2">Lookup Failed</h3>
             <p class="text-[11px] text-red-400/80 font-mono" id="errorText"></p>
         </div>
     </main>
 
     <script>
-        const GOOGLE_BRIDGE_URL = "https://script.google.com/macros/s/AKfycbxyn55A5zJriE3KMOM_VC_1KhhCY2jernm7t76UqaShZhgyexzvkYNdlT3f3Uk1mHF0/exec";
+        const BRIDGE_URL = "https://script.google.com/macros/s/AKfycbxyn55A5zJriE3KMOM_VC_1KhhCY2jernm7t76UqaShZhgyexzvkYNdlT3f3Uk1mHF0/exec";
+        let currentData = [];
 
         function cleanName(str) {
-            return str.split('\n')[0]
-                .replace(/(\d+\.)+\d+/g, '') 
-                .replace(/\(x64\)|\(32-bit\)|(64 bits)|x64|x86/gi, '')
-                .replace(/Microsoft Corporation|Google LLC|Intel Corporation|Dell Inc\.|Apple Inc\.|Thales DIS|LogMeIn, Inc\.|Dropbox, Inc\./gi, '')
-                .trim();
+            return str.split('\n')[0].replace(/(\d+\.)+\d+/g, '').replace(/\(x64\)|\(32-bit\)|x64|x86/gi, '').trim();
         }
 
         async function performLookup() {
             const input = document.getElementById('searchInput').value;
             const term = cleanName(input);
-            const results = document.getElementById('resultsArea');
-            const loader = document.getElementById('loader');
-            const errorBox = document.getElementById('errorBox');
-
             if (!term) return;
 
-            results.innerHTML = '';
-            errorBox.classList.add('hidden');
-            loader.classList.remove('hidden');
+            document.getElementById('resultsArea').innerHTML = '';
+            document.getElementById('loader').classList.remove('hidden');
 
             try {
-                // Fetch through the Google Apps Script Bridge
-                const response = await fetch(`${GOOGLE_BRIDGE_URL}?q=${encodeURIComponent(term)}`);
-                
-                if (!response.ok) throw new Error("Bridge connection error.");
-                
+                const response = await fetch(`${BRIDGE_URL}?q=${encodeURIComponent(term)}`);
                 const data = await response.json();
-                loader.classList.add('hidden');
-
-                if (!data.vulnerabilities || data.vulnerabilities.length === 0) {
-                    results.innerHTML = `<div class="col-span-full p-20 border border-dashed border-slate-800 rounded-2xl text-center text-slate-500 uppercase text-xs tracking-[0.3em] bg-[#161b22]/20 font-bold">Safe: No CVEs found for "${term}"</div>`;
-                    return;
-                }
-
-                data.vulnerabilities.forEach(item => {
-                    const cve = item.cve;
-                    const m = cve.metrics?.cvssMetricV31?.[0]?.cvssData || cve.metrics?.cvssMetricV30?.[0]?.cvssData;
-                    const score = m?.baseScore || 'N/A';
-                    const severity = m?.baseSeverity || 'UNKNOWN';
-
-                    let color = 'bg-slate-800 border-slate-700';
-                    if (score >= 9) color = 'bg-red-900/20 border-red-900/50 text-red-400';
-                    else if (score >= 7) color = 'bg-orange-900/20 border-orange-900/50 text-orange-400';
-
-                    const desc = cve.descriptions.find(d => d.lang === 'en')?.value || "No info.";
-                    const link = cve.references[0]?.url || "#";
-
-                    results.innerHTML += `
-                        <div class="bg-[#161b22] border border-slate-800 rounded-xl flex flex-col p-6 hover:border-blue-500/50 transition-all shadow-xl group">
-                            <div class="flex justify-between items-center mb-4">
-                                <span class="text-blue-500 font-mono text-[10px] font-bold">${cve.id}</span>
-                                <span class="${color} text-[9px] font-black px-2 py-0.5 rounded border uppercase tracking-tighter shadow-sm">${severity} ${score}</span>
-                            </div>
-                            <p class="text-[11px] text-slate-400 leading-relaxed mb-6 line-clamp-6 italic group-hover:text-slate-300 transition-colors">"${desc}"</p>
-                            <a href="${link}" target="_blank" class="mt-auto block w-full text-center py-2.5 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white rounded text-[10px] font-black uppercase tracking-[0.2em] transition-all border border-blue-900/20">
-                                <i class="fas fa-external-link-alt mr-2 text-[8px]"></i> Technical Details
-                            </a>
-                        </div>`;
-                });
-
+                currentData = data.vulnerabilities || [];
+                renderCards();
             } catch (err) {
-                loader.classList.add('hidden');
-                errorBox.classList.remove('hidden');
-                document.getElementById('errorText').innerText = "The bridge is currently unavailable. Please verify the Google Macro is deployed as 'Anyone'.";
+                document.getElementById('errorText').innerText = "Bridge Timeout. Check Google Macro deployment.";
+                document.getElementById('errorBox').classList.remove('hidden');
+            } finally {
+                document.getElementById('loader').classList.add('hidden');
             }
+        }
+
+        function renderCards() {
+            const container = document.getElementById('resultsArea');
+            const sortBy = document.getElementById('sortOrder').value;
+            container.innerHTML = '';
+
+            // Sorting Logic
+            let sorted = [...currentData].sort((a, b) => {
+                if (sortBy === 'newest') return new Date(b.cve.published) - new Date(a.cve.published);
+                const scoreA = getScore(a);
+                const scoreB = getScore(b);
+                return scoreB - scoreA;
+            });
+
+            if (sorted.length === 0) {
+                container.innerHTML = `<div class="col-span-full p-20 border border-dashed border-slate-800 rounded-2xl text-center text-slate-500 uppercase text-xs font-bold">No active threats found.</div>`;
+                return;
+            }
+
+            sorted.forEach(item => {
+                const cve = item.cve;
+                const metrics = cve.metrics?.cvssMetricV31?.[0]?.cvssData || cve.metrics?.cvssMetricV30?.[0]?.cvssData;
+                const score = metrics?.baseScore || '0';
+                const severity = metrics?.baseSeverity || 'UNKNOWN';
+                const date = new Date(cve.published).toLocaleDateString();
+
+                // Patch Logic
+                const isPatch = cve.references.some(r => r.tags?.includes('Patch') || r.tags?.includes('Vendor Advisory'));
+                const link = cve.references.find(r => r.tags?.includes('Vendor Advisory'))?.url || cve.references[0]?.url || "#";
+
+                const card = document.createElement('div');
+                card.className = `bg-[#161b22] border border-slate-800 rounded-xl p-6 flex flex-col transition-all group ${score >= 9 ? 'crit-glow border-red-900/50' : ''}`;
+                card.setAttribute('data-severity', severity);
+                
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <span class="text-blue-500 font-mono text-[10px] font-bold block">${cve.id}</span>
+                            <span class="text-[9px] text-slate-600 font-bold uppercase tracking-widest">${date}</span>
+                        </div>
+                        <span class="px-2 py-1 rounded text-[10px] font-black uppercase ${getSeverityClass(score)}">${severity} ${score}</span>
+                    </div>
+                    
+                    <p class="text-[11px] text-slate-400 leading-relaxed mb-6 line-clamp-4 italic group-hover:text-slate-200 transition-colors">
+                        "${cve.descriptions.find(d => d.lang === 'en')?.value}"
+                    </p>
+
+                    <div class="mt-auto space-y-3">
+                        <div class="p-3 bg-black/40 rounded-lg border border-slate-800 text-[9px] space-y-2">
+                            <div class="flex items-center gap-2 ${isPatch ? 'text-green-400' : 'text-orange-400'}">
+                                <i class="fas ${isPatch ? 'fa-check-circle' : 'fa-info-circle'}"></i>
+                                <span>${isPatch ? 'OFFICIAL PATCH REPORTED' : 'ADVISORY ONLY - CHECK VENDOR'}</span>
+                            </div>
+                        </div>
+                        <a href="${link}" target="_blank" class="block w-full text-center py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">
+                            Verify & Patch at Vendor
+                        </a>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function getScore(item) {
+            const m = item.cve.metrics?.cvssMetricV31?.[0]?.cvssData || item.cve.metrics?.cvssMetricV30?.[0]?.cvssData;
+            return parseFloat(m?.baseScore || 0);
+        }
+
+        function getSeverityClass(score) {
+            if (score >= 9) return 'bg-red-600 text-white';
+            if (score >= 7) return 'bg-orange-600 text-white';
+            if (score >= 4) return 'bg-yellow-600 text-black';
+            return 'bg-slate-700 text-slate-300';
+        }
+
+        function toggleUrgentOnly() {
+            const btn = document.getElementById('toggleCritical');
+            document.body.classList.toggle('hide-low');
+            btn.classList.toggle('bg-red-600');
+            btn.classList.toggle('text-white');
         }
 
         document.getElementById("searchInput").addEventListener("keyup", e => { if (e.key === "Enter") performLookup(); });
